@@ -11,6 +11,7 @@ import {
   MaxLength,
   IsEnum,
 } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 enum TaskStatus {
   ACTIVE = 'ACTIVE',
@@ -19,11 +20,26 @@ enum TaskStatus {
 }
 
 export class CreateTaskDto {
+  @ApiProperty({
+    description: 'Name of the task',
+    example: 'Daily Status Report',
+    maxLength: 100,
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100, { message: 'Task name must not exceed 100 characters' })
   name: string;
 
+  @ApiProperty({
+    description: 'Cron expression for task scheduling. Supports standard cron format or predefined expressions',
+    example: '0 9 * * *',
+    examples: {
+      'Every day at 9 AM': { value: '0 9 * * *' },
+      'Every hour': { value: '0 * * * *' },
+      'Daily at midnight': { value: '@daily' },
+      'Every Monday at 8 AM': { value: '0 8 * * 1' },
+    },
+  })
   @IsString()
   @IsNotEmpty()
   @Matches(/^((\*|[0-9,\-\/*]+)\s+){4}(\*|[0-9,\-\/*]+)(\s+(\*|[0-9,\-\/*]+))?$|^@(yearly|annually|monthly|weekly|daily|hourly|reboot)$/, {
@@ -31,20 +47,57 @@ export class CreateTaskDto {
   })
   schedule: string;
 
+  @ApiProperty({
+    description: 'Discord webhook URL where the message will be sent',
+    example: 'https://discord.com/api/webhooks/123456789/abcdefghijklmnop',
+  })
   @IsUrl({}, { message: 'Invalid webhook URL format' })
   @IsNotEmpty()
   webhookUrl: string;
 
+  @ApiProperty({
+    description: 'Discord webhook payload containing the message content and formatting',
+    example: {
+      content: 'Task executed successfully!',
+      embeds: [
+        {
+          title: '✅ Task Completed',
+          description: 'Daily status report has been generated',
+          color: 3066993,
+          fields: [
+            {
+              name: 'Status',
+              value: 'Success',
+              inline: true,
+            },
+          ],
+        },
+      ],
+    },
+  })
   @IsObject()
   @IsNotEmpty()
   payload: Record<string, any>;
 
+  @ApiPropertyOptional({
+    description: 'Maximum number of retry attempts if webhook fails',
+    example: 3,
+    minimum: 0,
+    maximum: 10,
+    default: 3,
+  })
   @IsInt()
   @Min(0, { message: 'Max retry must be at least 0' })
   @Max(10, { message: 'Max retry cannot exceed 10' })
   @IsOptional()
   maxRetry?: number;
 
+  @ApiPropertyOptional({
+    description: 'Initial status of the task',
+    enum: TaskStatus,
+    example: TaskStatus.ACTIVE,
+    default: TaskStatus.ACTIVE,
+  })
   @IsEnum(TaskStatus, { message: 'Invalid task status' })
   @IsOptional()
   status?: TaskStatus;

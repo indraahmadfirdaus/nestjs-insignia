@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: task-scheduler-postgres
+    environment:
+      POSTGRES_DB: task_scheduler
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - task-scheduler-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: task-scheduler-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - task-scheduler-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  task-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: task-scheduler-app
+    ports:
+      - "3005:3005"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/task_scheduler?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_KEY: dev-api-key-12345
+      PORT: 3005
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - task-scheduler-network
+    restart: unless-stopped
+
+networks:
+  task-scheduler-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
