@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  name        String
+  schedule    String     // cron format
+  webhookUrl  String     @map("webhook_url")
+  payload     Json       // Discord payload as JSON
+  maxRetry    Int        @default(3) @map("max_retry")
+  status      TaskStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  logs        TaskLog[]
+
+  @@map("tasks")
+}
+
+model TaskLog {
+  id            String     @id @default(uuid())
+  taskId        String     @map("task_id")
+  executionTime DateTime   @default(now()) @map("execution_time")
+  status        LogStatus
+  retryCount    Int        @default(0) @map("retry_count")
+  message       String?    @db.Text
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  task          Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_logs")
+}
+
+enum TaskStatus {
+  ACTIVE
+  INACTIVE
+  FAILED
+}
+
+enum LogStatus {
+  SUCCESS
+  FAILED
+  RETRYING
+}
