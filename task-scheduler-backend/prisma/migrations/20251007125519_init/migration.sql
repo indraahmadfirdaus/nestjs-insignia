@@ -10,7 +10,6 @@ CREATE TABLE "tasks" (
     "name" TEXT NOT NULL,
     "schedule" TEXT NOT NULL,
     "webhook_url" TEXT NOT NULL,
-    "payload" JSONB NOT NULL,
     "max_retry" INTEGER NOT NULL DEFAULT 3,
     "status" "TaskStatus" NOT NULL DEFAULT 'ACTIVE',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

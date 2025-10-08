@@ -35,9 +35,23 @@ export class DiscordService {
 
   constructor(private readonly httpService: HttpService) {}
 
-  async sendWebhook(
+  /**
+   * Send task execution notification to Discord webhook
+   * @param webhookUrl - Full Discord webhook URL
+   * @param taskId - Task ID being executed
+   * @param taskName - Name of the task
+   * @param status - Execution status (success/failed/retrying)
+   * @param retryCount - Current retry count
+   * @param message - Optional additional message
+   * @param attempt - Current attempt number for retry logic
+   */
+  async sendTaskNotification(
     webhookUrl: string,
-    payload: any,
+    taskId: string,
+    taskName: string,
+    status: 'success' | 'failed' | 'retrying',
+    retryCount = 0,
+    message?: string,
     attempt = 1,
   ): Promise<boolean> {
     try {
@@ -46,13 +60,22 @@ export class DiscordService {
         throw new BadRequestException('Invalid Discord webhook URL format');
       }
 
+      // Construct execution notification payload (backend-generated)
+      const payload = this.buildExecutionPayload(
+        taskId,
+        taskName,
+        status,
+        retryCount,
+        message,
+      );
+
       // Validate payload
       if (!this.validateWebhookPayload(payload)) {
         throw new BadRequestException('Invalid Discord webhook payload');
       }
 
       this.logger.log(
-        `Sending webhook to Discord (attempt ${attempt}/${this.MAX_RETRIES})`,
+        `Sending task notification to Discord (attempt ${attempt}/${this.MAX_RETRIES})`,
       );
 
       // Send POST request
@@ -71,14 +94,123 @@ export class DiscordService {
       );
       return true;
     } catch (error) {
-      return await this.handleWebhookError(error, webhookUrl, payload, attempt);
+      return await this.handleWebhookError(error, webhookUrl, taskId, taskName, status, retryCount, message, attempt);
     }
+  }
+
+  /**
+   * Validate Discord webhook URL format
+   */
+  private isValidDiscordWebhookUrl(url: string): boolean {
+    try {
+      const parsedUrl = new URL(url);
+      const isDiscordDomain =
+        parsedUrl.hostname === 'discord.com' ||
+        parsedUrl.hostname === 'discordapp.com' ||
+        parsedUrl.hostname.endsWith('.discord.com') ||
+        parsedUrl.hostname.endsWith('.discordapp.com');
+
+      const hasWebhookPath = parsedUrl.pathname.includes('/api/webhooks/');
+
+      return isDiscordDomain && hasWebhookPath;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Build Discord payload for task execution notification
+   */
+  private buildExecutionPayload(
+    taskId: string,
+    taskName: string,
+    status: 'success' | 'failed' | 'retrying',
+    retryCount: number,
+    message?: string,
+  ): DiscordPayload {
+    const timestamp = new Date().toISOString();
+
+    // Status-specific configuration
+    const statusConfig = {
+      success: {
+        title: '✅ Task Completed',
+        color: 3066993, // Green
+        description: `Task "${taskName}" has been executed successfully`,
+      },
+      failed: {
+        title: '❌ Task Failed',
+        color: 15158332, // Red
+        description: `Task "${taskName}" execution failed`,
+      },
+      retrying: {
+        title: '⚠️ Task Retrying',
+        color: 16776960, // Yellow
+        description: `Task "${taskName}" is being retried`,
+      },
+    };
+
+    const config = statusConfig[status];
+
+    const embed: DiscordEmbed = {
+      title: config.title,
+      description: config.description,
+      color: config.color,
+      fields: [
+        {
+          name: 'Task ID',
+          value: taskId,
+          inline: true,
+        },
+        {
+          name: 'Task Name',
+          value: taskName,
+          inline: true,
+        },
+        {
+          name: 'Execution Time',
+          value: new Date().toLocaleString('en-US', {
+            timeZone: 'UTC',
+            dateStyle: 'medium',
+            timeStyle: 'medium',
+          }),
+          inline: false,
+        },
+      ],
+      timestamp,
+    };
+
+    // Add retry count if applicable
+    if (retryCount > 0) {
+      embed.fields!.push({
+        name: 'Retry Count',
+        value: retryCount.toString(),
+        inline: true,
+      });
+    }
+
+    // Add message if provided
+    if (message) {
+      embed.fields!.push({
+        name: 'Details',
+        value: message.substring(0, 1024), // Discord limit
+        inline: false,
+      });
+    }
+
+    return {
+      username: 'Task Scheduler Bot',
+      embeds: [embed],
+    };
   }
 
   private async handleWebhookError(
     error: any,
     webhookUrl: string,
-    payload: any,
+    taskId: string,
+    taskName: string,
+    status: 'success' | 'failed' | 'retrying',
+    retryCount: number,
+    message: string | undefined,
     attempt: number,
   ): Promise<boolean> {
     const isAxiosError = error.isAxiosError;
@@ -103,7 +235,15 @@ export class DiscordService {
       this.logger.log(`Retrying in ${delay}ms...`);
 
       await this.sleep(delay);
-      return await this.sendWebhook(webhookUrl, payload, attempt + 1);
+      return await this.sendTaskNotification(
+        webhookUrl,
+        taskId,
+        taskName,
+        status,
+        retryCount,
+        message,
+        attempt + 1,
+      );
     }
 
     this.logger.error(
@@ -222,23 +362,6 @@ export class DiscordService {
     }
 
     return true;
-  }
-
-  private isValidDiscordWebhookUrl(url: string): boolean {
-    try {
-      const parsedUrl = new URL(url);
-      const isDiscordDomain =
-        parsedUrl.hostname === 'discord.com' ||
-        parsedUrl.hostname === 'discordapp.com' ||
-        parsedUrl.hostname.endsWith('.discord.com') ||
-        parsedUrl.hostname.endsWith('.discordapp.com');
-
-      const hasWebhookPath = parsedUrl.pathname.includes('/api/webhooks/');
-
-      return isDiscordDomain && hasWebhookPath;
-    } catch {
-      return false;
-    }
   }
 
   private calculateBackoffDelay(attempt: number): number {
