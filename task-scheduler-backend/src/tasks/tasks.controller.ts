@@ -21,6 +21,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
+import { SchedulerService } from '../scheduler/scheduler.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import {
@@ -37,7 +38,10 @@ import { TaskStatus } from '@prisma/client';
 export class TasksController {
   private readonly logger = new Logger(TasksController.name);
 
-  constructor(private readonly tasksService: TasksService) {}
+  constructor(
+    private readonly tasksService: TasksService,
+    private readonly schedulerService: SchedulerService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -47,7 +51,21 @@ export class TasksController {
   @ApiResponse({ status: 401, description: 'Unauthorized - Invalid or missing API key' })
   async create(@Body() createTaskDto: CreateTaskDto) {
     this.logger.log(`Creating task: ${createTaskDto.name}`);
-    return await this.tasksService.create(createTaskDto);
+    const task = await this.tasksService.create(createTaskDto);
+
+    // Register task in scheduler if it's active
+    if (task.status === TaskStatus.ACTIVE) {
+      await this.schedulerService.addCronJob(
+        task.id,
+        task.name,
+        task.schedule,
+        task.webhookUrl,
+        task.maxRetry,
+      );
+      this.logger.log(`Registered cron job for task: ${task.id}`);
+    }
+
+    return task;
   }
 
   @Get()
@@ -95,7 +113,26 @@ export class TasksController {
   @ApiResponse({ status: 404, description: 'Task not found' })
   async update(@Param('id') id: string, @Body() updateTaskDto: UpdateTaskDto) {
     this.logger.log(`Updating task: ${id}`);
-    return await this.tasksService.update(id, updateTaskDto);
+    const task = await this.tasksService.update(id, updateTaskDto);
+
+    // Update scheduler based on task status and changes
+    if (task.status === TaskStatus.ACTIVE) {
+      // If task is active, update or add cron job
+      await this.schedulerService.updateCronJob(
+        task.id,
+        task.name,
+        task.schedule,
+        task.webhookUrl,
+        task.maxRetry,
+      );
+      this.logger.log(`Updated cron job for task: ${task.id}`);
+    } else {
+      // If task is inactive or failed, remove cron job
+      this.schedulerService.removeCronJob(task.id);
+      this.logger.log(`Removed cron job for inactive/failed task: ${task.id}`);
+    }
+
+    return task;
   }
 
   @Delete(':id')
@@ -107,6 +144,11 @@ export class TasksController {
   @ApiResponse({ status: 404, description: 'Task not found' })
   async remove(@Param('id') id: string) {
     this.logger.log(`Deleting task: ${id}`);
+
+    // Remove cron job before deleting task
+    this.schedulerService.removeCronJob(id);
+    this.logger.log(`Removed cron job for deleted task: ${id}`);
+
     return await this.tasksService.remove(id);
   }
 
@@ -119,6 +161,25 @@ export class TasksController {
   @ApiResponse({ status: 404, description: 'Task not found' })
   async toggleStatus(@Param('id') id: string) {
     this.logger.log(`Toggling task status: ${id}`);
-    return await this.tasksService.toggleTaskStatus(id);
+    const task = await this.tasksService.toggleTaskStatus(id);
+
+    // Update scheduler based on new status
+    if (task.status === TaskStatus.ACTIVE) {
+      // Task is now active, add cron job
+      await this.schedulerService.addCronJob(
+        task.id,
+        task.name,
+        task.schedule,
+        task.webhookUrl,
+        task.maxRetry,
+      );
+      this.logger.log(`Registered cron job for activated task: ${task.id}`);
+    } else {
+      // Task is now inactive, remove cron job
+      this.schedulerService.removeCronJob(task.id);
+      this.logger.log(`Removed cron job for deactivated task: ${task.id}`);
+    }
+
+    return task;
   }
 }

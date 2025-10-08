@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,15 +17,11 @@ export class TasksService {
 
   async create(createTaskDto: CreateTaskDto) {
     try {
-      // Validate Discord webhook payload structure
-      this.validateDiscordPayload(createTaskDto.payload);
-
       const task = await this.prisma.task.create({
         data: {
           name: createTaskDto.name,
           schedule: createTaskDto.schedule,
           webhookUrl: createTaskDto.webhookUrl,
-          payload: createTaskDto.payload,
           maxRetry: createTaskDto.maxRetry || 3,
           status: (createTaskDto.status as TaskStatus) || TaskStatus.ACTIVE,
         },
@@ -101,18 +96,12 @@ export class TasksService {
       // Check if task exists
       await this.findOne(id);
 
-      // Validate payload if provided
-      if (updateTaskDto.payload) {
-        this.validateDiscordPayload(updateTaskDto.payload);
-      }
-
       const task = await this.prisma.task.update({
         where: { id },
         data: {
           ...(updateTaskDto.name && { name: updateTaskDto.name }),
           ...(updateTaskDto.schedule && { schedule: updateTaskDto.schedule }),
           ...(updateTaskDto.webhookUrl && { webhookUrl: updateTaskDto.webhookUrl }),
-          ...(updateTaskDto.payload && { payload: updateTaskDto.payload }),
           ...(updateTaskDto.maxRetry !== undefined && { maxRetry: updateTaskDto.maxRetry }),
           ...(updateTaskDto.status && { status: updateTaskDto.status as TaskStatus }),
         },
@@ -220,38 +209,6 @@ export class TasksService {
     }
   }
 
-  private validateDiscordPayload(payload: any) {
-    // Basic Discord webhook payload validation
-    if (!payload || typeof payload !== 'object') {
-      throw new BadRequestException('Payload must be a valid object');
-    }
-
-    // Check for at least one of the required fields
-    const hasContent = 'content' in payload;
-    const hasEmbeds = 'embeds' in payload && Array.isArray(payload.embeds);
-
-    if (!hasContent && !hasEmbeds) {
-      throw new BadRequestException(
-        'Discord webhook payload must contain either "content" or "embeds"',
-      );
-    }
-
-    // Validate content length if present
-    if (hasContent && typeof payload.content === 'string') {
-      if (payload.content.length > 2000) {
-        throw new BadRequestException(
-          'Discord content must not exceed 2000 characters',
-        );
-      }
-    }
-
-    // Validate embeds if present
-    if (hasEmbeds) {
-      if (payload.embeds.length > 10) {
-        throw new BadRequestException('Discord webhook supports maximum 10 embeds');
-      }
-    }
-  }
 
   async findLogsByTaskId(
     taskId: string,

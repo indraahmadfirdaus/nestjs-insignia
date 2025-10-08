@@ -17,8 +17,7 @@ model Task {
   id          String     @id @default(uuid())
   name        String
   schedule    String     // cron format
-  webhookUrl  String     @map("webhook_url")
-  payload     Json       // Discord payload as JSON
+  webhookUrl  String     @map("webhook_url") // Full Discord webhook URL
   maxRetry    Int        @default(3) @map("max_retry")
   status      TaskStatus @default(ACTIVE)
   createdAt   DateTime   @default(now()) @map("created_at")

@@ -48,36 +48,12 @@ export class CreateTaskDto {
   schedule: string;
 
   @ApiProperty({
-    description: 'Discord webhook URL where the message will be sent',
-    example: 'https://discord.com/api/webhooks/123456789/abcdefghijklmnop',
+    description: 'Discord webhook URL where the notification will be sent',
+    example: 'https://discord.com/api/webhooks/1234567890123456789/abcdefghijklmnop',
   })
   @IsUrl({}, { message: 'Invalid webhook URL format' })
   @IsNotEmpty()
   webhookUrl: string;
-
-  @ApiProperty({
-    description: 'Discord webhook payload containing the message content and formatting',
-    example: {
-      content: 'Task executed successfully!',
-      embeds: [
-        {
-          title: '✅ Task Completed',
-          description: 'Daily status report has been generated',
-          color: 3066993,
-          fields: [
-            {
-              name: 'Status',
-              value: 'Success',
-              inline: true,
-            },
-          ],
-        },
-      ],
-    },
-  })
-  @IsObject()
-  @IsNotEmpty()
-  payload: Record<string, any>;
 
   @ApiPropertyOptional({
     description: 'Maximum number of retry attempts if webhook fails',
